@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Sentiment Analyzer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #eef1f6;
+      margin: 0;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    h2 {
+      color: #1a1a1a;
+      margin-bottom: 20px;
+    }
+
+    form {
+      background-color: #ffffff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 20px 30px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+    }
+
+    input[type="file"] {
+      padding: 8px;
+      font-size: 1rem;
+      margin-top: 10px;
+    }
+
+    #fileLabel {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      font-size: 1rem;
+      border-radius: 6px;
+      margin-top: 16px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    #summaryMetrics, #resultSection, #chartSection {
+      display: none; /* Hidden initially */
+      margin-top: 40px;
+      width: 100%;
+      max-width: 960px;
+      background-color: #ffffff;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+
+    th {
+      background-color: #f0f0f0;
+      color: #333;
+    }
+
+    th, td {
+      padding: 12px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+
+    p.error {
+      color: red;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <h2>Upload CSV for Sentiment Analysis</h2>
+
+  <form id="uploadForm">
+    <input type="file" id="fileInput" accept=".csv" required />
+    <div id="fileLabel"></div>
+    <button type="submit" id="analyzeBtn">Upload & Analyze</button>
+    <div id="loadingMessage" style="margin-top: 10px; font-size: 0.95rem; color: #333;"></div>
+  </form>
+
+  <div id="summaryMetrics"></div>
+  <div id="chartSection"><canvas id="sentimentChart"></canvas></div>
+  <div id="resultSection"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const form = document.getElementById("uploadForm");
+    const fileInput = document.getElementById("fileInput");
+    const fileLabel = document.getElementById("fileLabel");
+    const resultSection = document.getElementById("resultSection");
+    const summarySection = document.getElementById("summaryMetrics");
+    const chartCanvas = document.getElementById("sentimentChart");
+    const chartSection = document.getElementById("chartSection");
+    const loadingMsg = document.getElementById("loadingMessage");
+
+    let sentimentChart;
+
+    fileInput.addEventListener("change", () => {
+      fileLabel.textContent = fileInput.files[0]?.name || "";
+    });
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resultSection.innerHTML = "";
+      summarySection.innerHTML = "";
+      loadingMsg.textContent = "🔄 Analyzing...";
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      try {
+        const uploadRes = await fetch("/upload-data/", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          loadingMsg.textContent = "";
+          resultSection.innerHTML = "<p class='error'>❌ Upload failed.</p>";
+          return;
+        }
+
+        const analyzeRes = await fetch("/analyze/", { method: "POST" });
+        const data = await analyzeRes.json();
+
+        if (!Array.isArray(data)) {
+          loadingMsg.textContent = "";
+          resultSection.innerHTML = `<p class='error'>❌ ${data.error || "Unexpected analysis failure."}</p>`;
+          return;
+        }
+
+        renderResults(data);
+        renderSummary(data);
+        renderChart(data);
+
+
+        summarySection.style.display = "block";
+        resultSection.style.display = "block";
+        chartSection.style.display = "block";
+
+        loadingMsg.textContent = "";
+      } catch (err) {
+        console.error(err);
+        loadingMsg.textContent = "";
+        resultSection.innerHTML = "<p class='error'> An unexpected error occurred. Check console for details.</p>";
+      }
+    });
+
+    function renderResults(data) {
+      let html = `<h3> Detailed Sentiment Results</h3><table><thead><tr>
+        <th>Name</th>
+        <th>Comment</th>
+        <th>Positive</th>
+        <th>Neutral</th>
+        <th>Negative</th>
+        <th>Compound</th>
+      </tr></thead><tbody>`;
+
+      data.forEach((row) => {
+        html += `<tr>
+          <td>${row.Name}</td>
+          <td>${row.Comment}</td>
+          <td>${row.Sentiment.pos}</td>
+          <td>${row.Sentiment.neu}</td>
+          <td>${row.Sentiment.neg}</td>
+          <td>${row.Sentiment.compound}</td>
+        </tr>`;
+      });
+
+      html += "</tbody></table>";
+      resultSection.innerHTML = html;
+    }
+
+    function renderSummary(data) {
+      let total = data.length;
+      let avg = (arr) => arr.reduce((a, b) => a + b, 0) / total;
+      let pos = avg(data.map(d => d.Sentiment.pos)).toFixed(3);
+      let neu = avg(data.map(d => d.Sentiment.neu)).toFixed(3);
+      let neg = avg(data.map(d => d.Sentiment.neg)).toFixed(3);
+      let compound = avg(data.map(d => d.Sentiment.compound)).toFixed(3);
+
+      let interpretation = compound > 0.2 ?"Overall Positive" :
+                           compound < -0.2 ?"Overall Negative" : 
+                           "Mostly Neutral";
+
+      summarySection.innerHTML = `
+        <h3> Summary Metrics</h3>
+        <ul>
+          <li><strong>Average Positive Score:</strong> ${pos}</li>
+          <li><strong>Average Neutral Score:</strong> ${neu}</li>
+          <li><strong>Average Negative Score:</strong> ${neg}</li>
+          <li><strong>Average Compound Score:</strong> ${compound} (${interpretation})</li>
+        </ul>
+      `;
+    }
+
+    function renderChart(data) {
+      const labels = data.map(d => d.Name);
+      const compoundScores = data.map(d => d.Sentiment.compound);
+
+      if (sentimentChart) sentimentChart.destroy();
+
+      sentimentChart = new Chart(chartCanvas, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Compound Sentiment Score',
+            data: compoundScores,
+            backgroundColor: compoundScores.map(score =>
+              score > 0.2 ? 'rgba(0, 200, 132, 0.7)' :
+              score < -0.2 ? 'rgba(255, 99, 132, 0.7)' :
+              'rgba(255, 206, 86, 0.7)'
+            ),
+            borderRadius: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Sentiment Score by User'
+            }
+          },
+          scales: {
+            y: {
+              min: -1,
+              max: 1,
+              title: { display: true, text: 'Compound Score' }
+            }
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
