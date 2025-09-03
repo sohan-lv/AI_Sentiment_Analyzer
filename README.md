@@ -20,3 +20,5 @@ This project uses a FastAPI backend and a dynamic HTML frontend to analyze senti
 pip install -r requirements.txt
 
 To launch the app: Run uvicorn main:app --reload and open http://127.0.0.1:8000/static/index.html in your browser.
+
+> Made by Sohan L V | University of South Florida |
